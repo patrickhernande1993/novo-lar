@@ -3,7 +3,22 @@ import { Plus, Search, Calendar, CheckCircle2, Circle, Upload, Sparkles, AlertCi
 import { Layout } from './components/Layout';
 import { Modal } from './components/Modal';
 import { Expense, PaymentStatus, ExpenseDraft } from './types';
-import { fileToBase64, analyzeReceipt } from './services/geminiService';
+
+// Helper to convert file to base64 locally
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+      } else {
+        reject(new Error("Failed to convert file to base64"));
+      }
+    };
+    reader.onerror = error => reject(error);
+  });
+};
 
 const STORAGE_KEY = 'apto_expenses_v1';
 
@@ -51,7 +66,6 @@ export default function App() {
   }, [expenses]);
 
   // Smart Description: Updates description when Date changes to match "Parcela Mensal MM/AAAA"
-  // ONLY if the description is empty or already follows the pattern (to avoid overwriting custom text)
   useEffect(() => {
     if (!draft.dueDate) return;
     
@@ -59,7 +73,7 @@ export default function App() {
     const newDescription = `Parcela Mensal ${month}/${year}`;
 
     setDraft(prev => {
-       // If empty or currently holds a pattern-like string, update it
+       // Only update if description is empty or follows the pattern
        if (!prev.description || prev.description.startsWith('Parcela Mensal')) {
            return { ...prev, description: newDescription };
        }
@@ -74,25 +88,12 @@ export default function App() {
     try {
       setIsAnalyzing(true);
       const base64 = await fileToBase64(file);
-      setDraft(prev => ({ ...prev, receiptBase64: base64 }));
-
-      // Call AI to fill details
-      const analysis = await analyzeReceipt(base64);
       
-      setDraft(prev => {
-        const newData = { ...prev, ...analysis, receiptBase64: base64 };
-        
-        // If AI found a date, ensure description matches the pattern requested by user
-        if (analysis.dueDate) {
-            const [year, month] = analysis.dueDate.split('-');
-            newData.description = `Parcela Mensal ${month}/${year}`;
-        }
-        
-        return newData;
-      });
-
+      // Just attach the file, no AI analysis to prevent crashes
+      setDraft(prev => ({ ...prev, receiptBase64: base64 }));
+      
     } catch (error) {
-      alert("Não foi possível analisar o comprovante automaticamente. Por favor, preencha os dados manualmente.");
+      alert("Erro ao anexar arquivo.");
     } finally {
       setIsAnalyzing(false);
     }
@@ -107,6 +108,7 @@ export default function App() {
     };
     setExpenses(prev => [newExpense, ...prev]);
     setIsModalOpen(false);
+    
     // Reset draft
     const today = new Date().toISOString().split('T')[0];
     const [year, month] = today.split('-');
@@ -263,14 +265,14 @@ export default function App() {
       >
         <form onSubmit={handleSubmit} className="space-y-5">
            
-           {/* Smart Upload Section */}
+           {/* Upload Section */}
            <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-100">
               <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-indigo-200 border-dashed rounded-lg cursor-pointer hover:bg-indigo-100/50 transition-colors">
                   <div className="flex flex-col items-center justify-center pt-5 pb-6">
                       {isAnalyzing ? (
                           <div className="flex items-center text-indigo-600 animate-pulse">
                               <Sparkles className="w-5 h-5 mr-2" />
-                              <span className="text-sm font-medium">Lendo boleto/comprovante...</span>
+                              <span className="text-sm font-medium">Anexando...</span>
                           </div>
                       ) : (
                           <>
@@ -278,7 +280,6 @@ export default function App() {
                                 <Upload className="w-5 h-5 mr-2" />
                                 <span className="text-sm font-semibold">Anexar Boleto ou Comprovante</span>
                             </div>
-                            <p className="text-xs text-indigo-400">Preenchimento automático via IA</p>
                           </>
                       )}
                   </div>
