@@ -50,18 +50,22 @@ export default function App() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(expenses));
   }, [expenses]);
 
-  // Generate default description when modal opens
+  // Smart Description: Updates description when Date changes to match "Parcela Mensal MM/AAAA"
+  // ONLY if the description is empty or already follows the pattern (to avoid overwriting custom text)
   useEffect(() => {
-    if (isModalOpen && !draft.description) {
-      const today = new Date();
-      const month = String(today.getMonth() + 1).padStart(2, '0');
-      const year = today.getFullYear();
-      setDraft(prev => ({
-        ...prev,
-        description: `Parcela Mensal ${month}/${year}`
-      }));
-    }
-  }, [isModalOpen]); // Removed draft.description from deps to prevent overwrite if user types then re-renders
+    if (!draft.dueDate) return;
+    
+    const [year, month] = draft.dueDate.split('-');
+    const newDescription = `Parcela Mensal ${month}/${year}`;
+
+    setDraft(prev => {
+       // If empty or currently holds a pattern-like string, update it
+       if (!prev.description || prev.description.startsWith('Parcela Mensal')) {
+           return { ...prev, description: newDescription };
+       }
+       return prev;
+    });
+  }, [draft.dueDate]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -74,12 +78,18 @@ export default function App() {
 
       // Call AI to fill details
       const analysis = await analyzeReceipt(base64);
-      setDraft(prev => ({
-        ...prev,
-        ...analysis,
-        // Keep the base64 we just uploaded
-        receiptBase64: base64
-      }));
+      
+      setDraft(prev => {
+        const newData = { ...prev, ...analysis, receiptBase64: base64 };
+        
+        // If AI found a date, ensure description matches the pattern requested by user
+        if (analysis.dueDate) {
+            const [year, month] = analysis.dueDate.split('-');
+            newData.description = `Parcela Mensal ${month}/${year}`;
+        }
+        
+        return newData;
+      });
 
     } catch (error) {
       alert("Não foi possível analisar o comprovante automaticamente. Por favor, preencha os dados manualmente.");
@@ -98,10 +108,12 @@ export default function App() {
     setExpenses(prev => [newExpense, ...prev]);
     setIsModalOpen(false);
     // Reset draft
+    const today = new Date().toISOString().split('T')[0];
+    const [year, month] = today.split('-');
     setDraft({
-        description: '',
+        description: `Parcela Mensal ${month}/${year}`,
         amount: 0,
-        dueDate: new Date().toISOString().split('T')[0],
+        dueDate: today,
         status: PaymentStatus.PENDING,
         receiptBase64: ''
     });
@@ -132,13 +144,13 @@ export default function App() {
            <h1 className="text-2xl font-bold text-slate-800">Visão Geral</h1>
            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-                  <p className="text-sm font-medium text-slate-500">Total Pago (Mês)</p>
-                  <p className="text-3xl font-bold text-indigo-600 mt-2">
+                  <p className="text-sm font-medium text-slate-500">Total Pago (Geral)</p>
+                  <p className="text-3xl font-bold text-emerald-600 mt-2">
                     R$ {expenses.filter(e => e.status === PaymentStatus.PAID).reduce((acc, cur) => acc + cur.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                   </p>
               </div>
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-                  <p className="text-sm font-medium text-slate-500">Pendente</p>
+                  <p className="text-sm font-medium text-slate-500">Pendente (Geral)</p>
                   <p className="text-3xl font-bold text-orange-500 mt-2">
                     R$ {expenses.filter(e => e.status === PaymentStatus.PENDING).reduce((acc, cur) => acc + cur.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                   </p>
@@ -152,25 +164,25 @@ export default function App() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h1 className="text-2xl font-bold text-slate-800">Parcelas</h1>
-              <p className="text-slate-500 mt-1">Gerencie boletos e comprovantes</p>
+              <p className="text-slate-500 mt-1">Gerenciamento de despesas do apartamento</p>
             </div>
             <button
               onClick={() => setIsModalOpen(true)}
               className="flex items-center justify-center px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors shadow-sm shadow-indigo-200"
             >
               <Plus className="w-5 h-5 mr-2" />
-              Nova Parcela
+              Incluir Parcela
             </button>
           </div>
 
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-             {/* Simple List Header */}
+             {/* List Header */}
              <div className="grid grid-cols-12 gap-4 px-6 py-4 border-b border-slate-100 bg-slate-50/50 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                <div className="col-span-4 sm:col-span-3">Descrição</div>
+                <div className="col-span-4 sm:col-span-4">Descrição</div>
                 <div className="col-span-3 sm:col-span-2 text-right sm:text-left">Valor</div>
                 <div className="hidden sm:block sm:col-span-3">Vencimento</div>
                 <div className="col-span-3 sm:col-span-2 text-center">Status</div>
-                <div className="col-span-2 text-right">Ações</div>
+                <div className="col-span-2 sm:col-span-1 text-right">Ações</div>
              </div>
 
              {/* List Items */}
@@ -181,12 +193,12 @@ export default function App() {
                         <FileText className="w-8 h-8 text-slate-400" />
                     </div>
                     <h3 className="text-slate-900 font-medium">Nenhuma parcela registrada</h3>
-                    <p className="text-slate-500 text-sm mt-1">Clique em "Nova Parcela" para começar.</p>
+                    <p className="text-slate-500 text-sm mt-1">Clique em "Incluir Parcela" para começar.</p>
                  </div>
                ) : (
                  expenses.map((expense) => (
                     <div key={expense.id} className="grid grid-cols-12 gap-4 px-6 py-4 items-center hover:bg-slate-50 transition-colors">
-                      <div className="col-span-4 sm:col-span-3">
+                      <div className="col-span-4 sm:col-span-4">
                         <p className="font-medium text-slate-900 truncate">{expense.description}</p>
                         <p className="text-xs text-slate-500 sm:hidden mt-0.5">{new Date(expense.dueDate).toLocaleDateString('pt-BR')}</p>
                       </div>
@@ -198,7 +210,7 @@ export default function App() {
                       <div className="hidden sm:block sm:col-span-3 text-sm text-slate-600">
                         <div className="flex items-center">
                             <Calendar className="w-4 h-4 mr-2 text-slate-400" />
-                            {new Date(expense.dueDate).toLocaleDateString('pt-BR')}
+                            {new Date(expense.dueDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
                         </div>
                       </div>
 
@@ -206,22 +218,22 @@ export default function App() {
                          <button 
                             onClick={() => toggleStatus(expense.id)}
                             className={`
-                                inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border
+                                cursor-pointer inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border transition-all hover:shadow-sm
                                 ${expense.status === PaymentStatus.PAID 
-                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-100' 
-                                    : 'bg-amber-50 text-amber-700 border-amber-100'}
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100' 
+                                    : 'bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-100'}
                             `}
                          >
                             {expense.status === PaymentStatus.PAID ? 'Pago' : 'Pendente'}
                          </button>
                       </div>
 
-                      <div className="col-span-2 flex justify-end items-center gap-2">
+                      <div className="col-span-2 sm:col-span-1 flex justify-end items-center gap-2">
                          {expense.receiptBase64 && (
                             <button 
                                 onClick={() => {
                                     const win = window.open();
-                                    win?.document.write(`<img src="${expense.receiptBase64}" style="max-width: 100%;" />`);
+                                    win?.document.write(`<div style="display:flex;justify-content:center;background:#f1f5f9;height:100vh;align-items:center;"><img src="${expense.receiptBase64}" style="max-width:90%;max-height:90%;box-shadow:0 4px 6px -1px rgb(0 0 0 / 0.1);" /></div>`);
                                 }}
                                 title="Ver Comprovante"
                                 className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
@@ -247,7 +259,7 @@ export default function App() {
       <Modal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        title="Nova Parcela"
+        title="Incluir Parcela"
       >
         <form onSubmit={handleSubmit} className="space-y-5">
            
@@ -258,40 +270,38 @@ export default function App() {
                       {isAnalyzing ? (
                           <div className="flex items-center text-indigo-600 animate-pulse">
                               <Sparkles className="w-5 h-5 mr-2" />
-                              <span className="text-sm font-medium">Analisando com IA...</span>
+                              <span className="text-sm font-medium">Lendo boleto/comprovante...</span>
                           </div>
                       ) : (
                           <>
                             <div className="flex items-center text-indigo-600 mb-1">
                                 <Upload className="w-5 h-5 mr-2" />
-                                <span className="text-sm font-semibold">Anexar Comprovante / Boleto</span>
+                                <span className="text-sm font-semibold">Anexar Boleto ou Comprovante</span>
                             </div>
-                            <p className="text-xs text-indigo-400">Preenchimento automático com IA</p>
+                            <p className="text-xs text-indigo-400">Preenchimento automático via IA</p>
                           </>
                       )}
                   </div>
                   <input 
                     type="file" 
                     className="hidden" 
-                    accept="image/*"
+                    accept="image/*,application/pdf"
                     onChange={handleFileUpload}
                   />
               </label>
            </div>
 
-           <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Descrição</label>
-              <input 
-                type="text"
-                required
-                value={draft.description}
-                onChange={e => setDraft({...draft, description: e.target.value})}
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
-                placeholder="Ex: Aluguel Setembro"
-              />
-           </div>
-
            <div className="grid grid-cols-2 gap-4">
+              <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Data do Boleto</label>
+                  <input 
+                    type="date"
+                    required
+                    value={draft.dueDate}
+                    onChange={e => setDraft({...draft, dueDate: e.target.value})}
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                  />
+              </div>
               <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Valor (R$)</label>
                   <input 
@@ -305,27 +315,30 @@ export default function App() {
                     placeholder="0,00"
                   />
               </div>
-              <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Data Vencimento</label>
-                  <input 
-                    type="date"
-                    required
-                    value={draft.dueDate}
-                    onChange={e => setDraft({...draft, dueDate: e.target.value})}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
-                  />
-              </div>
            </div>
 
            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">Status</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Descrição</label>
+              <input 
+                type="text"
+                required
+                value={draft.description}
+                onChange={e => setDraft({...draft, description: e.target.value})}
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                placeholder="Parcela Mensal MM/AAAA"
+              />
+              <p className="text-xs text-slate-400 mt-1">Preenchido automaticamente ao selecionar a data</p>
+           </div>
+
+           <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Status do Pagamento</label>
               <div className="flex gap-4">
                  <button
                     type="button"
                     onClick={() => setDraft({...draft, status: PaymentStatus.PENDING})}
                     className={`flex-1 flex items-center justify-center px-4 py-3 rounded-xl border transition-all ${
                         draft.status === PaymentStatus.PENDING
-                        ? 'bg-amber-50 border-amber-200 text-amber-700 ring-1 ring-amber-200'
+                        ? 'bg-amber-50 border-amber-300 text-amber-700 ring-1 ring-amber-300 shadow-sm'
                         : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                     }`}
                  >
@@ -337,7 +350,7 @@ export default function App() {
                     onClick={() => setDraft({...draft, status: PaymentStatus.PAID})}
                     className={`flex-1 flex items-center justify-center px-4 py-3 rounded-xl border transition-all ${
                         draft.status === PaymentStatus.PAID
-                        ? 'bg-emerald-50 border-emerald-200 text-emerald-700 ring-1 ring-emerald-200'
+                        ? 'bg-emerald-50 border-emerald-300 text-emerald-700 ring-1 ring-emerald-300 shadow-sm'
                         : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                     }`}
                  >
