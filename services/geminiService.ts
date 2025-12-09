@@ -19,16 +19,7 @@ export const fileToBase64 = (file: File): Promise<string> => {
 
 export const analyzeReceipt = async (base64DataURI: string): Promise<Partial<ExpenseDraft>> => {
   try {
-    // Initialize inside the function to avoid "process is not defined" crash on page load in browser environments
-    // Check if process exists to avoid ReferenceError
-    const apiKey = (typeof process !== 'undefined' && process.env) ? process.env.API_KEY : undefined;
-
-    if (!apiKey) {
-      console.warn("Gemini API Key is missing. AI features will be disabled.");
-      throw new Error("API Key not found");
-    }
-
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
     const base64Data = base64DataURI.split(',')[1];
     const mimeType = base64DataURI.split(';')[0].split(':')[1];

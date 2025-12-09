@@ -3,6 +3,7 @@ import { Plus, Search, Calendar, CheckCircle2, Circle, Upload, Sparkles, AlertCi
 import { Layout } from './components/Layout';
 import { Modal } from './components/Modal';
 import { Expense, PaymentStatus, ExpenseDraft } from './types';
+import { analyzeReceipt } from './services/geminiService';
 
 // Helper to convert file to base64 locally
 const fileToBase64 = (file: File): Promise<string> => {
@@ -89,8 +90,16 @@ export default function App() {
       setIsAnalyzing(true);
       const base64 = await fileToBase64(file);
       
-      // Just attach the file, no AI analysis to prevent crashes
       setDraft(prev => ({ ...prev, receiptBase64: base64 }));
+
+      try {
+        const analysis = await analyzeReceipt(base64);
+        if (analysis) {
+            setDraft(prev => ({ ...prev, ...analysis }));
+        }
+      } catch (err) {
+        console.error("Analysis failed", err);
+      }
       
     } catch (error) {
       alert("Erro ao anexar arquivo.");
