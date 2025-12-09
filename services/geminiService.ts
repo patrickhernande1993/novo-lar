@@ -19,7 +19,15 @@ export const fileToBase64 = (file: File): Promise<string> => {
 
 export const analyzeReceipt = async (base64DataURI: string): Promise<Partial<ExpenseDraft>> => {
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    // A chave API será injetada pelo Vite via 'define' no vite.config.ts
+    const apiKey = process.env.API_KEY;
+    
+    if (!apiKey) {
+      console.warn("API Key não encontrada. Configure a variável de ambiente API_KEY.");
+      return {};
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
 
     const base64Data = base64DataURI.split(',')[1];
     const mimeType = base64DataURI.split(';')[0].split(':')[1];
@@ -68,6 +76,7 @@ export const analyzeReceipt = async (base64DataURI: string): Promise<Partial<Exp
 
   } catch (error) {
     console.error("Error analyzing receipt with Gemini:", error);
-    throw error;
+    // Retorna vazio em caso de erro para não travar a UI
+    return {};
   }
 };
